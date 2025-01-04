@@ -56,6 +56,20 @@ app.post('/generate-quiz', async (req, res) => {
   }
 });
 
+app.get('/quiz/all',async (req,res)=>{
+  try {
+    const quizzes = await Quiz.find()
+    res.status(200).json({
+      quizzes
+    })
+  } catch (error) {
+    console.error('Error fetching quizzes:', error);
+    res.status(500).json({
+      message: 'Failed to fetch quizzes',
+    });
+  }
+})
+
 app.get('/quiz/:id', async (req, res) => {
   try {
     const quiz = await Quiz.findOne({ id: req.params.id });
