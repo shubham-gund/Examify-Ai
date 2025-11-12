@@ -14,11 +14,17 @@ const syllabusSchema = new mongoose.Schema({
   },
   fileUrl: {
     type: String,
-    required: true
+    required: false,
+    default: null
   },
   fileName: {
     type: String,
     required: true
+  },
+  contentType: {
+    type: String,
+    enum: ['pdf', 'text'],
+    default: 'pdf'
   },
   parsedText: {
     type: String,

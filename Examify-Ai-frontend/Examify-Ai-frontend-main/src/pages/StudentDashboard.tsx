@@ -1,53 +1,141 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, LogOut, Clock, CheckCircle2, PlayCircle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { 
+  BookOpen, 
+  LogOut, 
+  Clock, 
+  CheckCircle2, 
+  PlayCircle, 
+  Upload,
+  Loader2,
+  TrendingUp 
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import { authService, examService } from "@/lib/api";
+
+interface Test {
+  _id: string;
+  title: string;
+  description?: string;
+  duration: number;
+  totalPoints: number;
+  attemptCount: number;
+  attemptsRemaining: number;
+  canAttempt: boolean;
+  passingScore: number;
+  questions: any[];
+}
+
+interface Analytics {
+  totalTests: number;
+  testsCompleted: number;
+  averageScore: number;
+  passRate: number;
+  passedTests: number;
+  failedTests: number;
+  highestScore: number;
+  lowestScore: number;
+}
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
+  const [user, setUser] = useState<any>(null);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [practiceTitle, setPracticeTitle] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
-  // Mock available tests
-  const mockTests = [
-    { 
-      id: 1, 
-      subject: "Mathematics", 
-      topic: "Calculus - Derivatives", 
-      questions: 15, 
-      duration: 30,
-      difficulty: "Medium",
-      status: "available"
-    },
-    { 
-      id: 2, 
-      subject: "Physics", 
-      topic: "Mechanics - Newton's Laws", 
-      questions: 20, 
-      duration: 45,
-      difficulty: "Hard",
-      status: "available"
-    },
-    { 
-      id: 3, 
-      subject: "Chemistry", 
-      topic: "Organic Chemistry Basics", 
-      questions: 10, 
-      duration: 20,
-      difficulty: "Easy",
-      status: "completed",
-      score: 85
-    },
-  ];
+  useEffect(() => {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== 'student') {
+      navigate('/login?role=student');
+      return;
+    }
+    setUser(currentUser);
+    fetchData();
+  }, [navigate]);
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case "Easy": return "bg-green-500/10 text-green-700 dark:text-green-400";
-      case "Medium": return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400";
-      case "Hard": return "bg-red-500/10 text-red-700 dark:text-red-400";
-      default: return "";
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [testsResponse, analyticsResponse] = await Promise.all([
+        examService.getAvailable(),
+        examService.getAnalytics()
+      ]);
+      
+      setTests(testsResponse.data.tests || []);
+      setAnalytics(analyticsResponse.data.analytics || null);
+    } catch (error: any) {
+      toast.error("Failed to load data");
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== 'application/pdf') {
+        toast.error("Please upload a PDF file");
+        return;
+      }
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUploadForPractice = async () => {
+    if (!selectedFile || !practiceTitle) {
+      toast.error("Please provide both file and title");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('pdf', selectedFile);
+      formData.append('title', practiceTitle);
+      formData.append('questionCount', '15');
+      formData.append('questionTypes', 'mcq,short');
+
+      const response = await examService.uploadForPractice(formData);
+      toast.success("Practice test generated successfully!");
+      
+      // Navigate to the practice test
+      navigate(`/test/${response.data.test.id}`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || "Failed to generate practice test");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    navigate("/");
+  };
+
+  const getDifficultyBadge = (test: Test) => {
+    const avgPoints = test.totalPoints / (test.questions?.length || 1);
+    if (avgPoints >= 5) return { label: "Hard", color: "bg-red-500/10 text-red-700" };
+    if (avgPoints >= 2) return { label: "Medium", color: "bg-yellow-500/10 text-yellow-700" };
+    return { label: "Easy", color: "bg-green-500/10 text-green-700" };
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
@@ -56,9 +144,12 @@ const StudentDashboard = () => {
         <div className="container mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <BookOpen className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold">Student Portal</h1>
+            <div>
+              <h1 className="text-xl font-bold">Student Portal</h1>
+              {user && <p className="text-sm text-muted-foreground">{user.name}</p>}
+            </div>
           </div>
-          <Button variant="ghost" onClick={() => navigate("/")}>
+          <Button variant="ghost" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Logout
           </Button>
@@ -67,105 +158,174 @@ const StudentDashboard = () => {
 
       <div className="container mx-auto max-w-6xl px-6 py-8">
         {/* Stats Overview */}
-        <div className="mb-8 grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Tests Completed</p>
-                  <p className="text-2xl font-bold">1</p>
+        {analytics && (
+          <div className="mb-8 grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Tests Completed</p>
+                    <p className="text-2xl font-bold">{analytics.testsCompleted}</p>
+                  </div>
+                  <CheckCircle2 className="h-8 w-8 text-green-500" />
                 </div>
-                <CheckCircle2 className="h-8 w-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Average Score</p>
-                  <p className="text-2xl font-bold">85%</p>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Average Score</p>
+                    <p className="text-2xl font-bold">{analytics.averageScore.toFixed(1)}%</p>
+                  </div>
+                  <TrendingUp className="h-8 w-8 text-primary" />
                 </div>
-                <BookOpen className="h-8 w-8 text-primary" />
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground">Available Tests</p>
-                  <p className="text-2xl font-bold">2</p>
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Pass Rate</p>
+                    <p className="text-2xl font-bold">{analytics.passRate.toFixed(0)}%</p>
+                  </div>
+                  <BookOpen className="h-8 w-8 text-accent" />
                 </div>
-                <PlayCircle className="h-8 w-8 text-accent" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Available Tests</p>
+                    <p className="text-2xl font-bold">{tests.filter(t => t.canAttempt).length}</p>
+                  </div>
+                  <PlayCircle className="h-8 w-8 text-primary" />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Upload for Practice */}
+        <Card className="mb-8">
+          <CardContent className="p-6">
+            <h3 className="mb-4 text-lg font-semibold">Generate Practice Test</h3>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Upload your study material and we'll generate a personalized practice test for you!
+            </p>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="practiceTitle">Test Title</Label>
+                <Input
+                  id="practiceTitle"
+                  placeholder="e.g., Physics Chapter 3 Practice"
+                  value={practiceTitle}
+                  onChange={(e) => setPracticeTitle(e.target.value)}
+                />
               </div>
-            </CardContent>
-          </Card>
-        </div>
+              <div className="flex items-end gap-4">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="practiceFile">Upload PDF</Label>
+                  <Input
+                    id="practiceFile"
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileUpload}
+                  />
+                </div>
+                <Button
+                  onClick={handleUploadForPractice}
+                  disabled={!selectedFile || !practiceTitle || isUploading}
+                >
+                  {isUploading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Generate
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Available Tests */}
         <div>
           <h2 className="mb-4 text-2xl font-bold">Available Mock Tests</h2>
-          <div className="grid gap-4">
-            {mockTests.map((test) => (
-              <Card key={test.id} className="transition-all hover:shadow-lg">
-                <CardContent className="p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex-1">
-                      <div className="mb-2 flex flex-wrap items-center gap-2">
-                        <h3 className="text-lg font-semibold">{test.subject}</h3>
-                        <Badge className={getDifficultyColor(test.difficulty)}>
-                          {test.difficulty}
-                        </Badge>
-                        {test.status === "completed" && (
-                          <Badge variant="outline" className="bg-green-500/10 text-green-700">
-                            Completed
-                          </Badge>
-                        )}
+          {tests.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                No tests available at the moment. Check back later!
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {tests.map((test) => {
+                const difficulty = getDifficultyBadge(test);
+                return (
+                  <Card key={test._id} className="transition-all hover:shadow-lg">
+                    <CardContent className="p-6">
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex-1">
+                          <div className="mb-2 flex flex-wrap items-center gap-2">
+                            <h3 className="text-lg font-semibold">{test.title}</h3>
+                            <Badge className={difficulty.color}>
+                              {difficulty.label}
+                            </Badge>
+                            {!test.canAttempt && (
+                              <Badge variant="outline" className="bg-muted">
+                                No attempts left
+                              </Badge>
+                            )}
+                          </div>
+                          {test.description && (
+                            <p className="mb-3 text-muted-foreground">{test.description}</p>
+                          )}
+                          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <BookOpen className="h-4 w-4" />
+                              {test.questions?.length || test.totalPoints} questions
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-4 w-4" />
+                              {test.duration} minutes
+                            </span>
+                            <span>
+                              Attempts: {test.attemptCount} / {test.attemptsRemaining + test.attemptCount}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {test.canAttempt ? (
+                            <Button
+                              onClick={() => navigate(`/test/${test._id}`)}
+                              className="w-full sm:w-auto"
+                            >
+                              <PlayCircle className="mr-2 h-4 w-4" />
+                              Start Test
+                            </Button>
+                          ) : (
+                            <Button variant="outline" disabled className="w-full sm:w-auto">
+                              No Attempts Left
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <p className="mb-3 text-muted-foreground">{test.topic}</p>
-                      <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <BookOpen className="h-4 w-4" />
-                          {test.questions} questions
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-4 w-4" />
-                          {test.duration} minutes
-                        </span>
-                        {test.status === "completed" && (
-                          <span className="font-medium text-green-600">
-                            Score: {test.score}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {test.status === "available" ? (
-                        <Button 
-                          onClick={() => navigate(`/test/${test.id}`)}
-                          className="w-full sm:w-auto"
-                        >
-                          <PlayCircle className="mr-2 h-4 w-4" />
-                          Start Test
-                        </Button>
-                      ) : (
-                        <Button 
-                          variant="outline"
-                          onClick={() => navigate(`/results/${test.id}`)}
-                          className="w-full sm:w-auto"
-                        >
-                          View Results
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

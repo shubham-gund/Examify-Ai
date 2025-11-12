@@ -4,60 +4,105 @@ const fs = require('fs').promises;
 const path = require('path');
 
 /**
- * @desc    Upload syllabus/study material
+ * @desc    Upload syllabus/study material (PDF or text)
  * @route   POST /api/syllabus/upload
  * @access  Private
  */
 exports.uploadSyllabus = async (req, res, next) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Please upload a PDF file'
-      });
-    }
-
-    const { title } = req.body;
+    const { title, content } = req.body;
 
     if (!title) {
-      await fs.unlink(req.file.path);
+      if (req.file) {
+        await fs.unlink(req.file.path).catch(err => console.error('Error deleting file:', err));
+      }
       return res.status(400).json({
         status: 'error',
         message: 'Please provide a title for the syllabus'
       });
     }
 
-    const pdfData = await parsePDF(req.file.path);
-    const cleanedText = cleanText(pdfData.text);
+    let parsedText = '';
+    let fileUrl = null;
+    let fileName = null;
+    let fileSize = null;
+    let pageCount = null;
 
-    if (!cleanedText || cleanedText.length < 100) {
-      await fs.unlink(req.file.path);
+    // Case 1: PDF file uploaded
+    if (req.file) {
+      try {
+        const pdfData = await parsePDF(req.file.path);
+        parsedText = cleanText(pdfData.text);
+        
+        if (!parsedText || parsedText.length < 100) {
+          await fs.unlink(req.file.path);
+          return res.status(400).json({
+            status: 'error',
+            message: 'Failed to extract meaningful content from PDF. Please check the file or use text input instead.'
+          });
+        }
+
+        fileUrl = `/uploads/${req.file.filename}`;
+        fileName = req.file.originalname;
+        fileSize = req.file.size;
+        pageCount = pdfData.pageCount;
+      } catch (pdfError) {
+        if (req.file) {
+          await fs.unlink(req.file.path).catch(err => console.error('Error deleting file:', err));
+        }
+        return res.status(400).json({
+          status: 'error',
+          message: 'Failed to parse PDF file. Please ensure it contains readable text.'
+        });
+      }
+    }
+    // Case 2: Text content provided
+    else if (content) {
+      parsedText = cleanText(content);
+      
+      if (!parsedText || parsedText.length < 100) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Please provide at least 100 characters of meaningful content'
+        });
+      }
+
+      // For text input, set default values
+      fileUrl = null;
+      fileName = 'Text Input';
+      fileSize = Buffer.byteLength(parsedText, 'utf8');
+      pageCount = 0;
+    }
+    // Case 3: Neither file nor content provided
+    else {
       return res.status(400).json({
         status: 'error',
-        message: 'Failed to extract meaningful content from PDF'
+        message: 'Please provide either a PDF file or text content'
       });
     }
 
     const syllabus = await Syllabus.create({
       title,
       uploadedBy: req.user.id,
-      fileUrl: `/uploads/${req.file.filename}`,
-      fileName: req.file.originalname,
-      parsedText: cleanedText,
-      fileSize: req.file.size,
-      pageCount: pdfData.pageCount
+      fileUrl: fileUrl || 'text-input',
+      fileName,
+      parsedText,
+      fileSize,
+      pageCount
     });
 
     res.status(201).json({
       status: 'success',
-      message: 'Syllabus uploaded and parsed successfully',
+      message: req.file ? 'Syllabus uploaded and parsed successfully' : 'Syllabus content saved successfully',
       data: {
         syllabus: {
           id: syllabus._id,
           title: syllabus.title,
           fileName: syllabus.fileName,
           pageCount: syllabus.pageCount,
-          uploadDate: syllabus.uploadDate
+          uploadDate: syllabus.uploadDate,
+          contentLength: parsedText.length,
+          contentType: req.file ? 'pdf' : 'text'
         }
       }
     });

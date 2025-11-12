@@ -62,7 +62,7 @@ const TestInterface = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, []);
+  });
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

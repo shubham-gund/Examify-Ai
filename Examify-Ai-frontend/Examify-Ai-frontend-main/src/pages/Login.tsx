@@ -1,22 +1,69 @@
 import { useState } from "react"
 import { motion } from "framer-motion"
 import { BookOpen, Mail, Lock, User, ArrowRight } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useNavigate, useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
+import { authService } from "@/lib/api"
 
 export default function Login() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const roleFromUrl = searchParams.get('role')
+  
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
+  const [role, setRole] = useState<'student' | 'teacher'>(
+    roleFromUrl === 'faculty' ? 'teacher' : 'student'
+  )
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    if (!email || !password) {
+      toast.error("Please fill in all fields")
+      return
+    }
+
+    if (!isLogin && !name) {
+      toast.error("Please enter your name")
+      return
+    }
+
     setLoading(true)
-    setTimeout(() => {
+
+    try {
+      if (isLogin) {
+        const response = await authService.login({ email, password })
+        toast.success("Login successful!")
+        
+        // Redirect based on role
+        const userRole = response.data.user.role
+        if (userRole === 'teacher') {
+          navigate('/faculty')
+        } else {
+          navigate('/student')
+        }
+      } else {
+        const response = await authService.register({ name, email, password, role })
+        toast.success("Account created successfully!")
+        
+        // Redirect based on role
+        if (role === 'teacher') {
+          navigate('/faculty')
+        } else {
+          navigate('/student')
+        }
+      }
+    } catch (error: any) {
+      const message = error.response?.data?.message || 
+                     (isLogin ? "Login failed" : "Registration failed")
+      toast.error(message)
+    } finally {
       setLoading(false)
-      alert(isLogin ? "Login successful!" : "Account created!")
-    }, 1500)
+    }
   }
 
   const containerVariants = {
@@ -30,7 +77,7 @@ export default function Login() {
 
   const inputVariants = {
     hidden: { opacity: 0, x: -20 },
-    visible: (i) => ({
+    visible: (i: number) => ({
       opacity: 1,
       x: 0,
       transition: { delay: i * 0.1, duration: 0.4 },
@@ -76,7 +123,7 @@ export default function Login() {
                 <BookOpen className="h-8 w-8 text-white" />
               </motion.div>
               <h1 className="text-3xl font-bold text-black">
-                MockTest
+                Examify AI
               </h1>
               <p className="mt-2 text-sm text-gray-600">
                 {isLogin ? "Welcome back" : "Join us today"}
@@ -113,31 +160,54 @@ export default function Login() {
               {/* Form Fields */}
               <motion.form onSubmit={handleSubmit} className="space-y-5">
                 {!isLogin && (
-                  <motion.div
-                    custom={0}
-                    variants={inputVariants}
-                    initial="hidden"
-                    animate="visible"
-                    className="space-y-2"
-                  >
-                    <label className="block text-sm font-medium text-black">
-                      Full Name
-                    </label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-                      <input
-                        type="text"
-                        placeholder="John Doe"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-3 text-black placeholder-gray-500 transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
-                      />
-                    </div>
-                  </motion.div>
+                  <>
+                    <motion.div
+                      custom={0}
+                      variants={inputVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className="space-y-2"
+                    >
+                      <label className="block text-sm font-medium text-black">
+                        Full Name
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="John Doe"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-3 text-black placeholder-gray-500 transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                          required={!isLogin}
+                        />
+                      </div>
+                    </motion.div>
+
+                    <motion.div
+                      custom={1}
+                      variants={inputVariants}
+                      initial="hidden"
+                      animate="visible"
+                      className="space-y-2"
+                    >
+                      <label className="block text-sm font-medium text-black">
+                        Role
+                      </label>
+                      <select
+                        value={role}
+                        onChange={(e) => setRole(e.target.value as 'student' | 'teacher')}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-black transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                      >
+                        <option value="student">Student</option>
+                        <option value="teacher">Teacher</option>
+                      </select>
+                    </motion.div>
+                  </>
                 )}
 
                 <motion.div
-                  custom={!isLogin ? 1 : 0}
+                  custom={!isLogin ? 2 : 0}
                   variants={inputVariants}
                   initial="hidden"
                   animate="visible"
@@ -154,12 +224,13 @@ export default function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-3 text-black placeholder-gray-500 transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                      required
                     />
                   </div>
                 </motion.div>
 
                 <motion.div
-                  custom={!isLogin ? 2 : 1}
+                  custom={!isLogin ? 3 : 1}
                   variants={inputVariants}
                   initial="hidden"
                   animate="visible"
@@ -176,12 +247,14 @@ export default function Login() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-4 py-3 text-black placeholder-gray-500 transition focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
+                      required
+                      minLength={6}
                     />
                   </div>
                 </motion.div>
 
                 <motion.button
-                  custom={!isLogin ? 3 : 2}
+                  custom={!isLogin ? 4 : 2}
                   variants={inputVariants}
                   initial="hidden"
                   animate="visible"

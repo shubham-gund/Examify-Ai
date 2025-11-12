@@ -1,49 +1,230 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { Upload, FileText, BookOpen, LogOut } from "lucide-react";
+import { Plus, Loader2, FileText, BookOpen, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { authService, syllabusService, aiService, testService } from "@/lib/api";
+
+interface Test {
+  _id: string;
+  title: string;
+  description?: string;
+  questions: any[];
+  duration: number;
+  totalPoints: number;
+  createdAt: string;
+}
 
 const FacultyDashboard = () => {
   const navigate = useNavigate();
-  const [syllabus, setSyllabus] = useState("");
-  const [subject, setSubject] = useState("");
+  const [user, setUser] = useState<any>(null);
+
+  // Form state
+  const [testTitle, setTestTitle] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [manualSyllabus, setManualSyllabus] = useState("");
+  const [inputMode, setInputMode] = useState<"pdf" | "manual">("pdf");
+  const [questionCount, setQuestionCount] = useState(10);
+  const [questionTypes, setQuestionTypes] = useState({
+    mcq: true,
+    short: false,
+    long: false,
+    true_false: false,
+  });
+
   const [isGenerating, setIsGenerating] = useState(false);
+  const [tests, setTests] = useState<Test[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock previous tests
-  const mockTests = [
-    { id: 1, subject: "Mathematics", topic: "Calculus", questions: 15, created: "2024-01-15" },
-    { id: 2, subject: "Physics", topic: "Mechanics", questions: 20, created: "2024-01-10" },
-  ];
+  // ===============================
+  // Load user and tests
+  // ===============================
+  useEffect(() => {
+    const currentUser = authService.getCurrentUser();
+    if (!currentUser || currentUser.role !== "teacher") {
+      navigate("/login?role=faculty");
+      return;
+    }
+    setUser(currentUser);
+    fetchTests();
+  }, [navigate]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      toast.info("File uploaded successfully");
-      // In real app, would extract text from PDF
+  const fetchTests = async () => {
+    try {
+      const response = await testService.getAll();
+      setTests(response.tests || []);
+    } catch (error: any) {
+      console.error("Error fetching tests:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleGenerateTest = () => {
-    if (!syllabus || !subject) {
-      toast.error("Please provide both subject and syllabus");
+  // ===============================
+  // Handlers
+  // ===============================
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.type !== "application/pdf") {
+        toast.error("Please upload a PDF file only");
+        return;
+      }
+      setSelectedFile(file);
+      toast.success(`File selected: ${file.name}`);
+    }
+  };
+
+  const handleQuestionTypeChange = (type: keyof typeof questionTypes) => {
+    setQuestionTypes((prev) => ({
+      ...prev,
+      [type]: !prev[type],
+    }));
+  };
+
+  const getSelectedTypes = () => {
+    return Object.entries(questionTypes)
+      .filter(([_, enabled]) => enabled)
+      .map(([type]) => type);
+  };
+
+  // ===============================
+  // Generate Test
+  // ===============================
+  const handleGenerateTest = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!testTitle.trim()) {
+      toast.error("Please enter a test title");
+      return;
+    }
+
+    const selectedTypes = getSelectedTypes();
+    if (selectedTypes.length === 0) {
+      toast.error("Please select at least one question type");
+      return;
+    }
+
+    if (questionCount < 5 || questionCount > 50) {
+      toast.error("Number of questions must be between 5 and 50");
+      return;
+    }
+
+    if (inputMode === "pdf" && !selectedFile) {
+      toast.error("Please upload a PDF syllabus");
+      return;
+    }
+
+    if (inputMode === "manual" && !manualSyllabus.trim()) {
+      toast.error("Please type your syllabus content");
       return;
     }
 
     setIsGenerating(true);
-    // Mock API call - would call Gemini API via backend
-    setTimeout(() => {
+
+    try {
+      let syllabusId = "";
+
+      // Step 1: Upload syllabus (always FormData)
+      toast.loading("Uploading syllabus...", { id: "upload" });
+      const formData = new FormData();
+      formData.append("title", testTitle);
+
+      if (inputMode === "pdf") {
+        formData.append("pdf", selectedFile!);
+      } else {
+        formData.append("content", manualSyllabus);
+      }
+
+      const syllabusResponse = await syllabusService.upload(formData);
+      syllabusId = syllabusResponse.syllabus.id;
+
+      toast.success("Syllabus uploaded successfully!", { id: "upload" });
+
+      // Step 2: Generate questions with AI
+      toast.loading("Generating questions with AI...", { id: "generate" });
+      const questionsResponse = await aiService.generateQuestions(
+        syllabusId,
+        questionCount,
+        selectedTypes
+      );
+
+      const generatedQuestions = questionsResponse.questions;
+      if (!generatedQuestions || generatedQuestions.length === 0) {
+        throw new Error("No questions generated");
+      }
+
+      toast.success(`Generated ${generatedQuestions.length} questions!`, {
+        id: "generate",
+      });
+
+      // Step 3: Create test
+      toast.loading("Creating test...", { id: "create" });
+
+      await testService.create({
+        title: testTitle,
+        description: `AI-generated test with ${generatedQuestions.length} questions`,
+        syllabusId,
+        questions: generatedQuestions.map((q: any) => q._id),
+        duration: Math.ceil(generatedQuestions.length * 2),
+        allowedAttempts: 2,
+        passingScore: 60,
+      });
+
+      toast.success("Test created successfully!", { id: "create" });
+
+      // Reset
+      setTestTitle("");
+      setSelectedFile(null);
+      setManualSyllabus("");
+      setQuestionCount(10);
+      setQuestionTypes({
+        mcq: true,
+        short: false,
+        long: false,
+        true_false: false,
+      });
+      fetchTests();
+    } catch (error: any) {
+      console.error("Generation error:", error);
+      toast.error(error.message || "Failed to generate test");
+    } finally {
       setIsGenerating(false);
-      toast.success("Mock test generated successfully!");
-      setSyllabus("");
-      setSubject("");
-    }, 2000);
+    }
   };
 
+  // ===============================
+  // Utils
+  // ===============================
+  const handleLogout = () => {
+    authService.logout();
+    navigate("/");
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // ===============================
+  // Render
+  // ===============================
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
       {/* Header */}
@@ -51,95 +232,199 @@ const FacultyDashboard = () => {
         <div className="container mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
             <BookOpen className="h-6 w-6 text-primary" />
-            <h1 className="text-xl font-bold">Faculty Portal</h1>
+            <div>
+              <h1 className="text-xl font-bold">Faculty Portal</h1>
+              {user && (
+                <p className="text-sm text-muted-foreground">{user.name}</p>
+              )}
+            </div>
           </div>
-          <Button variant="ghost" onClick={() => navigate("/")}>
+          <Button variant="ghost" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" />
             Logout
           </Button>
         </div>
       </header>
 
-      <div className="container mx-auto max-w-6xl px-6 py-8">
-        {/* Generate Test Section */}
+      {/* Main Content */}
+      <div className="container mx-auto max-w-4xl px-6 py-8">
+        {/* Generate Test Form */}
         <Card className="mb-8 shadow-lg">
           <CardHeader>
-            <CardTitle>Generate New Mock Test</CardTitle>
-            <CardDescription>Upload syllabus or paste content to generate AI-powered test questions</CardDescription>
+            <CardTitle className="text-2xl">Generate New Mock Test</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="subject">Subject/Topic</Label>
-              <Input
-                id="subject"
-                placeholder="e.g., Mathematics - Calculus"
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="syllabus">Syllabus Content</Label>
-              <Textarea
-                id="syllabus"
-                placeholder="Paste your syllabus content here..."
-                className="min-h-[200px]"
-                value={syllabus}
-                onChange={(e) => setSyllabus(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="file">Or Upload PDF</Label>
-              <div className="flex items-center gap-4">
+          <CardContent>
+            <form onSubmit={handleGenerateTest} className="space-y-4">
+              {/* Test Title */}
+              <div className="space-y-2">
+                <Label htmlFor="testTitle">Test Title</Label>
                 <Input
-                  id="file"
-                  type="file"
-                  accept=".pdf,.txt"
-                  onChange={handleFileUpload}
-                  className="max-w-sm"
+                  id="testTitle"
+                  type="text"
+                  placeholder="e.g., Data Structures - Mid Term"
+                  value={testTitle}
+                  onChange={(e) => setTestTitle(e.target.value)}
+                  disabled={isGenerating}
                 />
-                <Upload className="h-5 w-5 text-muted-foreground" />
               </div>
-            </div>
 
-            <Button 
-              onClick={handleGenerateTest}
-              disabled={isGenerating}
-              className="w-full sm:w-auto"
-            >
-              {isGenerating ? "Generating..." : "Generate Test"}
-            </Button>
+              {/* Input Mode */}
+              <div className="space-y-2">
+                <Label>Syllabus Input Mode</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={inputMode === "pdf"}
+                      onChange={() => setInputMode("pdf")}
+                      disabled={isGenerating}
+                    />
+                    Upload PDF
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={inputMode === "manual"}
+                      onChange={() => setInputMode("manual")}
+                      disabled={isGenerating}
+                    />
+                    Type Manually
+                  </label>
+                </div>
+              </div>
+
+              {/* Syllabus Input */}
+              {inputMode === "pdf" ? (
+                <div className="space-y-2">
+                  <Label htmlFor="pdfFile">Upload Syllabus (PDF)</Label>
+                  <Input
+                    id="pdfFile"
+                    type="file"
+                    accept=".pdf"
+                    onChange={handleFileChange}
+                    disabled={isGenerating}
+                  />
+                  {selectedFile && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      {selectedFile.name}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label htmlFor="manualSyllabus">Type Syllabus</Label>
+                  <Textarea
+                    id="manualSyllabus"
+                    placeholder="Type or paste syllabus content here..."
+                    rows={6}
+                    value={manualSyllabus}
+                    onChange={(e) => setManualSyllabus(e.target.value)}
+                    disabled={isGenerating}
+                  />
+                </div>
+              )}
+
+              {/* Question Count */}
+              <div className="space-y-2">
+                <Label htmlFor="questionCount">Number of Questions</Label>
+                <Input
+                  id="questionCount"
+                  type="number"
+                  min="5"
+                  max="50"
+                  value={questionCount}
+                  onChange={(e) =>
+                    setQuestionCount(parseInt(e.target.value) || 5)
+                  }
+                  disabled={isGenerating}
+                />
+                <p className="text-sm text-muted-foreground">Min: 5, Max: 50</p>
+              </div>
+
+              {/* Question Types */}
+              <div className="space-y-2">
+                <Label>Question Types</Label>
+                <div className="flex flex-wrap gap-4">
+                  {["mcq", "short", "long", "true_false"].map((type) => (
+                    <div key={type} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={type}
+                        checked={questionTypes[type as keyof typeof questionTypes]}
+                        onCheckedChange={() =>
+                          handleQuestionTypeChange(type as keyof typeof questionTypes)
+                        }
+                        disabled={isGenerating}
+                      />
+                      <label
+                        htmlFor={type}
+                        className="text-sm font-medium leading-none"
+                      >
+                        {type.replace("_", "/").toUpperCase()}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate Button */}
+              <Button type="submit" className="w-full" disabled={isGenerating}>
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating Test...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="mr-2 h-4 w-4" />
+                    Generate Test
+                  </>
+                )}
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
-        {/* Previous Tests */}
+        {/* Tests Section */}
         <div>
           <h2 className="mb-4 text-2xl font-bold">Your Tests</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            {mockTests.map((test) => (
-              <Card key={test.id} className="transition-all hover:shadow-lg">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="mb-1 flex items-center gap-2">
-                        <FileText className="h-5 w-5 text-primary" />
-                        <h3 className="font-semibold">{test.subject}</h3>
+          {tests.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                No tests created yet. Generate your first test above!
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {tests.map((test) => (
+                <Card key={test._id} className="transition-all hover:shadow-lg">
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="mb-1 flex items-center gap-2">
+                          <FileText className="h-5 w-5 text-primary" />
+                          <h3 className="font-semibold">{test.title}</h3>
+                        </div>
+                        {test.description && (
+                          <p className="mb-2 text-sm text-muted-foreground">
+                            {test.description}
+                          </p>
+                        )}
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          <span>{test.questions?.length || 0} questions</span>
+                          <span>{test.duration} min</span>
+                          <span>Created {formatDate(test.createdAt)}</span>
+                        </div>
                       </div>
-                      <p className="mb-2 text-sm text-muted-foreground">{test.topic}</p>
-                      <div className="flex gap-4 text-xs text-muted-foreground">
-                        <span>{test.questions} questions</span>
-                        <span>Created {test.created}</span>
-                      </div>
+                      <Button size="sm" variant="outline">
+                        View
+                      </Button>
                     </div>
-                    <Button size="sm" variant="outline">
-                      View
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -12,6 +12,7 @@ const syllabusRoutes = require('./routes/syllabusRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const testRoutes = require('./routes/testRoutes');
 const resultRoutes = require('./routes/resultRoutes');
+const examRoutes = require('./routes/examRoutes');
 
 const app = express();
 
@@ -21,13 +22,12 @@ connectDB();
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
+  origin: '*',
   credentials: true
 }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
 
 // Static files for uploads
 app.use('/uploads', express.static('uploads'));
@@ -47,6 +47,7 @@ app.use('/api/syllabus', syllabusRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/results', resultRoutes);
+app.use('/api/exams', examRoutes);
 
 // 404 handler
 app.use((req, res) => {

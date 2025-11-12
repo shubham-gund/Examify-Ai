@@ -13,11 +13,21 @@ const router = express.Router();
 // All routes require authentication
 router.use(protect);
 
-// Upload syllabus with PDF file
+// Upload syllabus with optional PDF file or text content
 router.post(
   '/upload',
-  upload.single('pdf'),
-  handleUploadError,
+  (req, res, next) => {
+    // Make file upload optional - proceed even if no file
+    upload.single('pdf')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          status: 'error',
+          message: err.message
+        });
+      }
+      next();
+    });
+  },
   uploadSyllabus
 );
 
