@@ -64,9 +64,23 @@ const callOpenAI = async (prompt) => {
  * Unified AI call
  */
 const callAI = async (prompt) => {
-  if (AI_PROVIDER === 'openai') return await callOpenAI(prompt);
-  if (AI_PROVIDER === 'gemini') return await callGemini(prompt);
-  throw new Error('Invalid AI provider configured');
+  // Try according to configured provider, but fall back to the other provider if the first fails.
+  const tryProviders = AI_PROVIDER === 'openai' ? ['openai', 'gemini'] : ['gemini', 'openai'];
+
+  let lastError;
+  for (const provider of tryProviders) {
+    try {
+      if (provider === 'openai') return await callOpenAI(prompt);
+      if (provider === 'gemini') return await callGemini(prompt);
+    } catch (err) {
+      lastError = err;
+      console.warn(`AI provider ${provider} failed, trying next provider. Error:`, err.message || err);
+      // small delay between retries
+      await new Promise(r => setTimeout(r, 250));
+    }
+  }
+
+  throw new Error(lastError?.message || 'All AI providers failed');
 };
 
 /**
@@ -188,8 +202,14 @@ Format as JSON:
       suggestions: 'Please review the material',
     };
   } catch (error) {
-    console.error('Error evaluating answer:', error);
-    throw error;
+    // If AI fails, don't break the entire submit flow. Return a safe default evaluation
+    console.error('Error evaluating answer (AI failed):', error.message || error);
+    return {
+      score: 0,
+      isCorrect: false,
+      feedback: 'AI evaluation unavailable. Please review the model answer or ask your instructor.',
+      suggestions: 'AI evaluation failed. Try again later.'
+    };
   }
 };
 

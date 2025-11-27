@@ -56,14 +56,17 @@ const FacultyDashboard = () => {
 
   const fetchTests = async () => {
     try {
-      const response = await testService.getAll();
-      setTests(response.tests || []);
+      const tests = await testService.getAll();
+      setTests(tests || []);
     } catch (error: any) {
       console.error("Error fetching tests:", error);
+      toast.error("Failed to load tests");
     } finally {
       setLoading(false);
     }
   };
+
+
 
   // ===============================
   // Handlers
@@ -97,106 +100,96 @@ const FacultyDashboard = () => {
   // Generate Test
   // ===============================
   const handleGenerateTest = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!testTitle.trim()) {
-      toast.error("Please enter a test title");
-      return;
+  if (!testTitle.trim()) {
+    toast.error("Please enter a test title");
+    return;
+  }
+
+  const selectedTypes = getSelectedTypes();
+  if (selectedTypes.length === 0) {
+    toast.error("Please select at least one question type");
+    return;
+  }
+
+  if (questionCount < 5 || questionCount > 50) {
+    toast.error("Number of questions must be between 5 and 50");
+    return;
+  }
+
+  if (inputMode === "pdf" && !selectedFile) {
+    toast.error("Please upload a PDF syllabus");
+    return;
+  }
+
+  if (inputMode === "manual" && !manualSyllabus.trim()) {
+    toast.error("Please type your syllabus content");
+    return;
+  }
+
+  setIsGenerating(true);
+
+  try {
+    let syllabusId = "";
+
+    // 🧾 Step 1: Upload syllabus (always FormData)
+    toast.loading("Uploading syllabus...", { id: "upload" });
+    const formData = new FormData();
+    formData.append("title", testTitle);
+
+    if (inputMode === "pdf") {
+      formData.append("pdf", selectedFile!);
+    } else {
+      formData.append("content", manualSyllabus);
     }
 
-    const selectedTypes = getSelectedTypes();
-    if (selectedTypes.length === 0) {
-      toast.error("Please select at least one question type");
-      return;
+    const syllabusResponse = await syllabusService.upload(formData);
+    syllabusId = syllabusResponse.data.syllabus.id; // ✅ fixed access path
+
+    toast.success("Syllabus uploaded successfully!", { id: "upload" });
+
+    // 🤖 Step 2: Generate questions using AI
+    toast.loading("Generating questions with AI...", { id: "generate" });
+    const questionsResponse = await aiService.generateQuestions(
+      syllabusId,
+      questionCount,
+      selectedTypes
+    );
+
+    const generatedQuestions = questionsResponse.data.questions;
+    if (!generatedQuestions || generatedQuestions.length === 0) {
+      throw new Error("No questions generated");
     }
 
-    if (questionCount < 5 || questionCount > 50) {
-      toast.error("Number of questions must be between 5 and 50");
-      return;
-    }
+    toast.success(`Generated ${generatedQuestions.length} questions!`, { id: "generate" });
 
-    if (inputMode === "pdf" && !selectedFile) {
-      toast.error("Please upload a PDF syllabus");
-      return;
-    }
+    // 🚀 Step 3: Redirect to Question Bank page
+    toast.success("Redirecting to Question Bank...", { id: "redirect" });
 
-    if (inputMode === "manual" && !manualSyllabus.trim()) {
-      toast.error("Please type your syllabus content");
-      return;
-    }
+    // Redirect to QuestionBank page with syllabusId in URL
+    navigate(`/faculty/questions?syllabusId=${syllabusId}`);
 
-    setIsGenerating(true);
+    // 🧹 Reset local state
+    setTestTitle("");
+    setSelectedFile(null);
+    setManualSyllabus("");
+    setQuestionCount(10);
+    setQuestionTypes({
+      mcq: true,
+      short: false,
+      long: false,
+      true_false: false,
+    });
 
-    try {
-      let syllabusId = "";
+  } catch (error: any) {
+    console.error("Generation error:", error);
+    toast.error(error.message || "Failed to generate questions");
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
-      // Step 1: Upload syllabus (always FormData)
-      toast.loading("Uploading syllabus...", { id: "upload" });
-      const formData = new FormData();
-      formData.append("title", testTitle);
-
-      if (inputMode === "pdf") {
-        formData.append("pdf", selectedFile!);
-      } else {
-        formData.append("content", manualSyllabus);
-      }
-
-      const syllabusResponse = await syllabusService.upload(formData);
-      syllabusId = syllabusResponse.syllabus.id;
-
-      toast.success("Syllabus uploaded successfully!", { id: "upload" });
-
-      // Step 2: Generate questions with AI
-      toast.loading("Generating questions with AI...", { id: "generate" });
-      const questionsResponse = await aiService.generateQuestions(
-        syllabusId,
-        questionCount,
-        selectedTypes
-      );
-
-      const generatedQuestions = questionsResponse.questions;
-      if (!generatedQuestions || generatedQuestions.length === 0) {
-        throw new Error("No questions generated");
-      }
-
-      toast.success(`Generated ${generatedQuestions.length} questions!`, {
-        id: "generate",
-      });
-
-      // Step 3: Create test
-      toast.loading("Creating test...", { id: "create" });
-
-      await testService.create({
-        title: testTitle,
-        description: `AI-generated test with ${generatedQuestions.length} questions`,
-        syllabusId,
-        questions: generatedQuestions.map((q: any) => q._id),
-        duration: Math.ceil(generatedQuestions.length * 2),
-        allowedAttempts: 2,
-        passingScore: 60,
-      });
-
-      toast.success("Test created successfully!", { id: "create" });
-
-      // Reset
-      setTestTitle("");
-      setSelectedFile(null);
-      setManualSyllabus("");
-      setQuestionCount(10);
-      setQuestionTypes({
-        mcq: true,
-        short: false,
-        long: false,
-        true_false: false,
-      });
-      fetchTests();
-    } catch (error: any) {
-      console.error("Generation error:", error);
-      toast.error(error.message || "Failed to generate test");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
 
   // ===============================
   // Utils
@@ -405,17 +398,23 @@ const FacultyDashboard = () => {
                           <FileText className="h-5 w-5 text-primary" />
                           <h3 className="font-semibold">{test.title}</h3>
                         </div>
+
                         {test.description && (
                           <p className="mb-2 text-sm text-muted-foreground">
                             {test.description}
                           </p>
                         )}
-                        <div className="flex gap-4 text-xs text-muted-foreground">
+
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                           <span>{test.questions?.length || 0} questions</span>
                           <span>{test.duration} min</span>
+                          {test.createdBy?.name && (
+                            <span>By {test.createdBy.name}</span>
+                          )}
                           <span>Created {formatDate(test.createdAt)}</span>
                         </div>
                       </div>
+
                       <Button size="sm" variant="outline">
                         View
                       </Button>

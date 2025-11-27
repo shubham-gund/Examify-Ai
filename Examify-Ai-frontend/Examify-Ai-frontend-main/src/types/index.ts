@@ -77,7 +77,6 @@ export interface Test {
   createdBy: string | User;
   syllabusId?: string | Syllabus;
   questions: string[] | Question[];
-  scheduledDate?: string;
   duration: number;
   totalPoints: number;
   isActive: boolean;

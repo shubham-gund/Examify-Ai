@@ -190,6 +190,27 @@ export const aiService = {
   },
 };
 
+// Question Service
+
+export const questionService = {
+  getAllByTeacher: async () => {
+    const response = await api.get('/questions');
+    return response.data;
+  },
+
+  getBySyllabus: async (syllabusId: string) => {
+    const response = await api.get(`/questions/${syllabusId}`);
+    return response.data;
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`/questions/${id}`);
+    return response.data;
+  },
+};
+
+
+
 // ==============================
 // Test Service (for teachers)
 // ==============================
@@ -210,8 +231,9 @@ export const testService = {
 
   getAll: async () => {
     const response = await api.get('/tests');
-    return response.data;
+    return response.data.data.tests; // ✅ directly return tests array
   },
+
 
   getById: async (id: string) => {
     const response = await api.get(`/tests/${id}`);

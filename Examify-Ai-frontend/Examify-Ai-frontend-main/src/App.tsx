@@ -10,6 +10,7 @@ import StudentDashboard from "./pages/StudentDashboard";
 import TestInterface from "./pages/TestInterface";
 import Results from "./pages/Results";
 import NotFound from "./pages/NotFound";
+import QuestionBank from "./pages/QuestionBank";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/faculty" element={<FacultyDashboard />} />
           <Route path="/student" element={<StudentDashboard />} />
+          <Route path="/faculty/questions" element={<QuestionBank />} />
           <Route path="/test/:id" element={<TestInterface />} />
           <Route path="/results/:id" element={<Results />} />
           <Route path="*" element={<NotFound />} />

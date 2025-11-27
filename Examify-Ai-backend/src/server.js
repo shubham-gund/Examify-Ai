@@ -13,6 +13,9 @@ const aiRoutes = require('./routes/aiRoutes');
 const testRoutes = require('./routes/testRoutes');
 const resultRoutes = require('./routes/resultRoutes');
 const examRoutes = require('./routes/examRoutes');
+const questionRoutes = require("./routes/questionRoutes");
+
+
 
 const app = express();
 
@@ -48,6 +51,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/tests', testRoutes);
 app.use('/api/results', resultRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/questions', questionRoutes);
 
 // 404 handler
 app.use((req, res) => {

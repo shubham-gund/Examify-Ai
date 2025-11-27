@@ -4,6 +4,39 @@ const Question = require('../models/Question');
 const { generateNotes, generateQuestions, evaluateAnswer } = require('../utils/aiService');
 const { splitTextIntoChunks } = require('../utils/pdfParser');
 
+exports.generateQuestions = async (req, res) => {
+  try {
+    const { syllabusId, count, types } = req.body;
+    const userId = req.user.id;
+
+    // Mock AI question generation (replace with your AI logic)
+    const generated = Array.from({ length: count }, (_, i) => ({
+      text: `Sample question ${i + 1}`,
+      type: types[Math.floor(Math.random() * types.length)],
+      syllabusId,
+      createdBy: userId,
+      options: ["A", "B", "C", "D"],
+      correctAnswer: "A",
+      marks: 1,
+    }));
+
+    // Save generated questions to DB
+    const questions = await Question.insertMany(generated);
+
+    res.status(201).json({
+      status: "success",
+      data: { questions },
+    });
+  } catch (error) {
+    console.error("AI generation error:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Failed to generate questions",
+    });
+  }
+};
+
+
 /**
  * @desc    Generate notes from syllabus
  * @route   POST /api/ai/generate-notes

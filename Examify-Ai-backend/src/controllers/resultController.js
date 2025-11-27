@@ -53,15 +53,18 @@ exports.submitTest = async (req, res, next) => {
       let evaluation;
 
       if (question.type === 'mcq' || question.type === 'true_false') {
-        const correctOption = question.options.find(opt => opt.isCorrect);
-        const isCorrect = submittedAnswer.answer.toLowerCase() === correctOption.text.toLowerCase();
-        
+        // defensive: question.options or correct option may be missing, and submittedAnswer.answer may be undefined
+        const correctOption = Array.isArray(question.options) ? question.options.find(opt => opt.isCorrect) : undefined;
+        const correctText = correctOption && typeof correctOption.text === 'string' ? correctOption.text : '';
+        const submittedText = submittedAnswer && submittedAnswer.answer != null ? String(submittedAnswer.answer) : '';
+        const isCorrect = submittedText.trim().toLowerCase() === correctText.trim().toLowerCase();
+
         evaluation = {
           score: isCorrect ? 1 : 0,
           isCorrect,
-          feedback: isCorrect 
-            ? 'Correct!' 
-            : `Incorrect. Correct answer: ${correctOption.text}`,
+          feedback: isCorrect
+            ? 'Correct!'
+            : (correctText ? `Incorrect. Correct answer: ${correctText}` : 'Incorrect. Correct answer not available'),
           suggestions: question.explanation || ''
         };
       } else {
