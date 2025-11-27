@@ -100,10 +100,16 @@ export const syllabusService = {
       let response;
 
       if (data instanceof FormData) {
-        // 📄 Upload PDF file (let browser set Content-Type)
-        response = await api.post('/syllabus/upload', data);
+        // 📄 Upload PDF file
+        // CRITICAL: Delete Content-Type to let axios set it automatically
+        const config = {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        };
+        response = await api.post('/syllabus/upload', data, config);
       } else {
-        // ✍️ Upload text syllabus
+        // ✍️ Upload text syllabus (uses default application/json)
         response = await api.post('/syllabus/upload', data);
       }
 
@@ -191,7 +197,6 @@ export const aiService = {
 };
 
 // Question Service
-
 export const questionService = {
   getAllByTeacher: async () => {
     const response = await api.get('/questions');
@@ -208,8 +213,6 @@ export const questionService = {
     return response.data;
   },
 };
-
-
 
 // ==============================
 // Test Service (for teachers)
@@ -231,9 +234,8 @@ export const testService = {
 
   getAll: async () => {
     const response = await api.get('/tests');
-    return response.data.data.tests; // ✅ directly return tests array
+    return response.data.data.tests;
   },
-
 
   getById: async (id: string) => {
     const response = await api.get(`/tests/${id}`);
@@ -281,7 +283,11 @@ export const examService = {
   },
 
   uploadForPractice: async (formData: FormData) => {
-    const response = await api.post('/exams/practice/upload', formData);
+    const response = await api.post('/exams/practice/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 

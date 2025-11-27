@@ -102,6 +102,7 @@ const FacultyDashboard = () => {
   const handleGenerateTest = async (e: React.FormEvent) => {
   e.preventDefault();
 
+  // Validation
   if (!testTitle.trim()) {
     toast.error("Please enter a test title");
     return;
@@ -133,23 +134,44 @@ const FacultyDashboard = () => {
   try {
     let syllabusId = "";
 
-    // 🧾 Step 1: Upload syllabus (always FormData)
+    // Step 1: Upload syllabus
     toast.loading("Uploading syllabus...", { id: "upload" });
+    
     const formData = new FormData();
     formData.append("title", testTitle);
 
     if (inputMode === "pdf") {
-      formData.append("pdf", selectedFile!);
+      formData.append("pdf", selectedFile!); 
     } else {
       formData.append("content", manualSyllabus);
     }
 
+    // Debug: Log FormData contents
+    console.log("FormData contents:");
+    for (let pair of formData.entries()) {
+      console.log(pair[0], pair[1]);
+    }
+
     const syllabusResponse = await syllabusService.upload(formData);
-    syllabusId = syllabusResponse.data.syllabus.id; // ✅ fixed access path
+    
+    // Debug: Log the full response
+    console.log("Syllabus Response:", syllabusResponse);
+    
+    // Access the ID correctly based on your backend response structure
+    // Try different possible paths:
+    syllabusId = syllabusResponse.data?.syllabus?.id || 
+                 syllabusResponse.syllabus?.id || 
+                 syllabusResponse.data?.id ||
+                 syllabusResponse.id;
+
+    if (!syllabusId) {
+      console.error("Could not find syllabus ID in response:", syllabusResponse);
+      throw new Error("Failed to get syllabus ID from upload response");
+    }
 
     toast.success("Syllabus uploaded successfully!", { id: "upload" });
 
-    // 🤖 Step 2: Generate questions using AI
+    // Step 2: Generate questions using AI
     toast.loading("Generating questions with AI...", { id: "generate" });
     const questionsResponse = await aiService.generateQuestions(
       syllabusId,
@@ -164,13 +186,11 @@ const FacultyDashboard = () => {
 
     toast.success(`Generated ${generatedQuestions.length} questions!`, { id: "generate" });
 
-    // 🚀 Step 3: Redirect to Question Bank page
+    // Step 3: Redirect to Question Bank page
     toast.success("Redirecting to Question Bank...", { id: "redirect" });
-
-    // Redirect to QuestionBank page with syllabusId in URL
     navigate(`/faculty/questions?syllabusId=${syllabusId}`);
 
-    // 🧹 Reset local state
+    // Reset form
     setTestTitle("");
     setSelectedFile(null);
     setManualSyllabus("");
@@ -184,13 +204,12 @@ const FacultyDashboard = () => {
 
   } catch (error: any) {
     console.error("Generation error:", error);
-    toast.error(error.message || "Failed to generate questions");
+    console.error("Error details:", error.response?.data || error.message);
+    toast.error(error.response?.data?.message || error.message || "Failed to generate questions");
   } finally {
     setIsGenerating(false);
   }
 };
-
-
   // ===============================
   // Utils
   // ===============================

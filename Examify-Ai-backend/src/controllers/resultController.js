@@ -33,7 +33,7 @@ exports.submitTest = async (req, res, next) => {
       testId: test._id
     });
 
-    if (attemptCount >= test.allowedAttempts) {
+    if (typeof test.allowedAttempts === 'number' && attemptCount >= test.allowedAttempts) {
       return res.status(403).json({
         status: 'error',
         message: 'Maximum attempts reached for this test'
@@ -43,9 +43,33 @@ exports.submitTest = async (req, res, next) => {
     const evaluatedAnswers = [];
     let totalScore = 0;
 
+    // helper: normalize different answer shapes to comparable strings
+    const normalize = (v) => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'boolean') return v ? 'true' : 'false';
+      if (typeof v === 'number') return String(v).trim().toLowerCase();
+      if (typeof v === 'object') {
+        // try common fields
+        if (v.text) return String(v.text).trim().toLowerCase();
+        if (v.value) return String(v.value).trim().toLowerCase();
+        if (v.id) return String(v.id).trim().toLowerCase();
+        // fallback to JSON string
+        try {
+          return JSON.stringify(v).trim().toLowerCase();
+        } catch (err) {
+          return '';
+        }
+      }
+      // string
+      const s = String(v).trim().toLowerCase();
+      if (['t', 'true', '1', 'yes', 'y'].includes(s)) return 'true';
+      if (['f', 'false', '0', 'no', 'n'].includes(s)) return 'false';
+      return s;
+    };
+
     for (const submittedAnswer of answers) {
       const question = test.questions.find(
-        q => q._id.toString() === submittedAnswer.questionId
+        q => q._id.toString() === String(submittedAnswer.questionId)
       );
 
       if (!question) continue;
@@ -53,42 +77,105 @@ exports.submitTest = async (req, res, next) => {
       let evaluation;
 
       if (question.type === 'mcq' || question.type === 'true_false') {
-        // defensive: question.options or correct option may be missing, and submittedAnswer.answer may be undefined
-        const correctOption = Array.isArray(question.options) ? question.options.find(opt => opt.isCorrect) : undefined;
-        const correctText = correctOption && typeof correctOption.text === 'string' ? correctOption.text : '';
-        const submittedText = submittedAnswer && submittedAnswer.answer != null ? String(submittedAnswer.answer) : '';
-        const isCorrect = submittedText.trim().toLowerCase() === correctText.trim().toLowerCase();
+        // Determine correct answer from multiple possible schema shapes
+
+        // 1) Try options array (common for MCQ)
+        let correctValue = '';
+        if (Array.isArray(question.options) && question.options.length) {
+          // common markers: isCorrect, correct, is_answer, is_correct
+          const correctOpt = question.options.find(opt =>
+            opt && (opt.isCorrect === true || opt.correct === true || opt.is_answer === true || opt.is_correct === true)
+          ) || question.options.find(opt => {
+            // maybe stored as answer: true or similar
+            return opt && (opt.answer === true || opt.correct_answer === true);
+          });
+
+          if (correctOpt) {
+            // prefer text/value/id/label
+            correctValue = normalize(correctOpt.text ?? correctOpt.value ?? correctOpt.label ?? correctOpt.id ?? correctOpt);
+          }
+        }
+
+        // 2) Fallbacks: common fields that might contain correct answer
+        if (!correctValue && (question.correctAnswer !== undefined && question.correctAnswer !== null)) {
+          correctValue = normalize(question.correctAnswer);
+        }
+        if (!correctValue && (question.correct_answer !== undefined && question.correct_answer !== null)) {
+          correctValue = normalize(question.correct_answer);
+        }
+        if (!correctValue && (question.answer !== undefined && question.answer !== null)) {
+          correctValue = normalize(question.answer);
+        }
+        if (!correctValue && (question.explanation !== undefined && question.explanation !== null)) {
+          // sometimes teacher puts a model answer in explanation
+          correctValue = normalize(question.explanation);
+        }
+
+        // submitted normalization
+        const submittedRaw = (submittedAnswer && (submittedAnswer.answer ?? submittedAnswer.value ?? submittedAnswer.optionId ?? submittedAnswer)) ?? '';
+        const submittedValue = normalize(submittedRaw);
+
+        // If correctValue is empty, we can't automatically grade reliably.
+        let isCorrect = false;
+        if (correctValue) {
+          // direct compare
+          isCorrect = submittedValue === correctValue;
+          // extra check: if options use ids and submittedValue may be an id while correctValue is text
+          // try comparing against option ids as well if options exist
+          if (!isCorrect && Array.isArray(question.options) && question.options.length) {
+            const optById = question.options.find(opt => normalize(opt.id ?? opt._id) === submittedValue);
+            if (optById) {
+              const correctOpt = question.options.find(opt =>
+                opt && (opt.isCorrect === true || opt.correct === true || opt.is_answer === true || opt.is_correct === true)
+              );
+              isCorrect = !!(correctOpt && normalize(correctOpt.text ?? correctOpt.value ?? correctOpt.id) === normalize(optById.text ?? optById.value ?? optById.id));
+            }
+          }
+        } else {
+          // No machine-readable correct answer found — log a warning (server-side) and treat as ungraded/incorrect
+          console.warn(`[Examify] No correct answer metadata for question ${question._id}. Manual grading or schema fix recommended.`);
+          isCorrect = false;
+        }
 
         evaluation = {
           score: isCorrect ? 1 : 0,
           isCorrect,
           feedback: isCorrect
             ? 'Correct!'
-            : (correctText ? `Incorrect. Correct answer: ${correctText}` : 'Incorrect. Correct answer not available'),
+            : (correctValue ? `Incorrect. Correct answer: ${correctValue}` : 'Incorrect. Correct answer not available'),
           suggestions: question.explanation || ''
         };
       } else {
+        // non-mcq -> use AI evaluation (existing)
         evaluation = await evaluateAnswer(
-          question.text,
-          submittedAnswer.answer,
+          question.text || question.question_text || question.questionText || '',
+          submittedAnswer && (submittedAnswer.answer ?? submittedAnswer) || '',
           question.correctAnswer || question.explanation || 'No model answer provided'
         );
+        // make sure evaluation has score/isCorrect/feedback
+        evaluation = {
+          score: typeof evaluation.score === 'number' ? evaluation.score : (evaluation.isCorrect ? 1 : 0),
+          isCorrect: !!evaluation.isCorrect,
+          feedback: evaluation.feedback || (evaluation.isCorrect ? 'Correct' : 'Incorrect'),
+          suggestions: evaluation.suggestions || ''
+        };
       }
 
-      const pointsEarned = Math.round(evaluation.score * (question.points || 1));
+      const pointsEarned = Math.round((evaluation.score || 0) * (question.points || 1));
       totalScore += pointsEarned;
 
       evaluatedAnswers.push({
         questionId: question._id,
-        answer: submittedAnswer.answer,
-        isCorrect: evaluation.isCorrect,
+        answer: submittedAnswer.answer ?? submittedAnswer,
+        isCorrect: !!evaluation.isCorrect,
         pointsEarned,
         aiFeedback: evaluation.feedback
       });
     }
 
-    const percentage = (totalScore / test.totalPoints) * 100;
-    const passed = percentage >= test.passingScore;
+    const totalPoints = Number(test.totalPoints) || 0;
+    const percentage = totalPoints > 0 ? (totalScore / totalPoints) * 100 : 0;
+    const passed = typeof test.passingScore === 'number' ? (percentage >= test.passingScore) : false;
 
     const result = await Result.create({
       studentId: req.user.id,
@@ -97,8 +184,8 @@ exports.submitTest = async (req, res, next) => {
       score: totalScore,
       percentage: Math.round(percentage * 100) / 100,
       passed,
-      feedback: passed 
-        ? 'Congratulations! You passed the test.' 
+      feedback: passed
+        ? 'Congratulations! You passed the test.'
         : 'Keep practicing. You can do better!',
       evaluationType: 'ai',
       timeSpent,
@@ -165,7 +252,7 @@ exports.getResult = async (req, res, next) => {
     }
 
     if (
-      req.user.role === 'student' && 
+      req.user.role === 'student' &&
       result.studentId._id.toString() !== req.user.id
     ) {
       return res.status(403).json({
@@ -175,7 +262,7 @@ exports.getResult = async (req, res, next) => {
     }
 
     if (
-      req.user.role === 'teacher' && 
+      req.user.role === 'teacher' &&
       result.testId.createdBy.toString() !== req.user.id
     ) {
       return res.status(403).json({
@@ -224,11 +311,11 @@ exports.getTestResults = async (req, res, next) => {
 
     const stats = {
       totalAttempts: results.length,
-      averageScore: results.reduce((sum, r) => sum + r.score, 0) / results.length || 0,
+      averageScore: results.length ? (results.reduce((sum, r) => sum + (r.score || 0), 0) / results.length) : 0,
       passCount: results.filter(r => r.passed).length,
       failCount: results.filter(r => !r.passed).length,
-      highestScore: Math.max(...results.map(r => r.score), 0),
-      lowestScore: Math.min(...results.map(r => r.score), test.totalPoints)
+      highestScore: results.length ? Math.max(...results.map(r => r.score || 0)) : 0,
+      lowestScore: results.length ? Math.min(...results.map(r => r.score || 0)) : 0
     };
 
     res.status(200).json({
