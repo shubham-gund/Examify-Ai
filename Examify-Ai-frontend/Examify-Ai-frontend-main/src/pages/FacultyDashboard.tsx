@@ -17,6 +17,7 @@ interface Test {
   questions: any[];
   duration: number;
   totalPoints: number;
+  createdBy: { name: string } | null;
   createdAt: string;
 }
 
@@ -30,12 +31,6 @@ const FacultyDashboard = () => {
   const [manualSyllabus, setManualSyllabus] = useState("");
   const [inputMode, setInputMode] = useState<"pdf" | "manual">("pdf");
   const [questionCount, setQuestionCount] = useState(10);
-  const [questionTypes, setQuestionTypes] = useState({
-    mcq: true,
-    short: false,
-    long: false,
-    true_false: false,
-  });
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [tests, setTests] = useState<Test[]>([]);
@@ -83,17 +78,8 @@ const FacultyDashboard = () => {
     }
   };
 
-  const handleQuestionTypeChange = (type: keyof typeof questionTypes) => {
-    setQuestionTypes((prev) => ({
-      ...prev,
-      [type]: !prev[type],
-    }));
-  };
-
   const getSelectedTypes = () => {
-    return Object.entries(questionTypes)
-      .filter(([_, enabled]) => enabled)
-      .map(([type]) => type);
+    return ["mcq"];
   };
 
   // ===============================
@@ -105,12 +91,6 @@ const FacultyDashboard = () => {
   // Validation
   if (!testTitle.trim()) {
     toast.error("Please enter a test title");
-    return;
-  }
-
-  const selectedTypes = getSelectedTypes();
-  if (selectedTypes.length === 0) {
-    toast.error("Please select at least one question type");
     return;
   }
 
@@ -173,6 +153,7 @@ const FacultyDashboard = () => {
 
     // Step 2: Generate questions using AI
     toast.loading("Generating questions with AI...", { id: "generate" });
+    const selectedTypes = getSelectedTypes();
     const questionsResponse = await aiService.generateQuestions(
       syllabusId,
       questionCount,
@@ -188,19 +169,13 @@ const FacultyDashboard = () => {
 
     // Step 3: Redirect to Question Bank page
     toast.success("Redirecting to Question Bank...", { id: "redirect" });
-    navigate(`/faculty/questions?syllabusId=${syllabusId}`);
+    navigate(`/faculty/questions/${syllabusId}`);
 
     // Reset form
     setTestTitle("");
     setSelectedFile(null);
     setManualSyllabus("");
     setQuestionCount(10);
-    setQuestionTypes({
-      mcq: true,
-      short: false,
-      long: false,
-      true_false: false,
-    });
 
   } catch (error: any) {
     console.error("Generation error:", error);
@@ -352,31 +327,6 @@ const FacultyDashboard = () => {
                   disabled={isGenerating}
                 />
                 <p className="text-sm text-muted-foreground">Min: 5, Max: 50</p>
-              </div>
-
-              {/* Question Types */}
-              <div className="space-y-2">
-                <Label>Question Types</Label>
-                <div className="flex flex-wrap gap-4">
-                  {["mcq", "short", "long", "true_false"].map((type) => (
-                    <div key={type} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={type}
-                        checked={questionTypes[type as keyof typeof questionTypes]}
-                        onCheckedChange={() =>
-                          handleQuestionTypeChange(type as keyof typeof questionTypes)
-                        }
-                        disabled={isGenerating}
-                      />
-                      <label
-                        htmlFor={type}
-                        className="text-sm font-medium leading-none"
-                      >
-                        {type.replace("_", "/").toUpperCase()}
-                      </label>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               {/* Generate Button */}

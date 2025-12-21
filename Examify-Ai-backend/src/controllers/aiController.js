@@ -109,7 +109,7 @@ exports.generateNotesFromSyllabus = async (req, res, next) => {
  */
 exports.generateQuestionsFromSyllabus = async (req, res, next) => {
   try {
-    const { syllabusId, count = 10, types = ['mcq', 'short'] } = req.body;
+    const { syllabusId, count = 10, types = ['mcq'] } = req.body;
 
     if (!syllabusId) {
       return res.status(400).json({

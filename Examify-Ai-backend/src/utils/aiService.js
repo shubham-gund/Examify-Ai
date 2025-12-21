@@ -124,18 +124,16 @@ Please format the response as JSON with this structure:
 /**
  * Generate questions
  */
-const generateQuestions = async (text, count = 10, types = ['mcq', 'short', 'long']) => {
-  const prompt = `Based on the following educational content, generate ${count} diverse questions.
-Include these types: ${types.join(', ')}
+const generateQuestions = async (text, count = 10, types = ['mcq']) => {
+  const prompt = `Based on the following educational content, generate ${count} multiple choice questions (MCQs).
 
 Content:
 ${text}
 
 For each question, provide:
 - Question text
-- Type (mcq, short, long, or true_false)
-- For MCQs: 4 options with correct answer marked
-- For other types: a model answer or key points
+- Type: mcq
+- 4 options with correct answer marked
 - Difficulty level (easy, medium, hard)
 - Brief explanation
 
@@ -150,7 +148,6 @@ Format as a JSON array of question objects like:
       {"text": "option3", "isCorrect": false},
       {"text": "option4", "isCorrect": false}
     ],
-    "correctAnswer": "for non-MCQ questions",
     "difficulty": "medium",
     "explanation": "brief explanation"
   }

@@ -204,7 +204,7 @@ export const questionService = {
   },
 
   getBySyllabus: async (syllabusId: string) => {
-    const response = await api.get(`/questions/${syllabusId}`);
+    const response = await api.get(`/questions/syllabus/${syllabusId}`);
     return response.data;
   },
 
