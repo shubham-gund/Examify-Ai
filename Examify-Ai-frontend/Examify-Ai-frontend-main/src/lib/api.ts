@@ -31,6 +31,11 @@ export const notesService = {
     const response = await api.get(`/ai/${id}`);
     return response.data;
   },
+
+  update: async (id: string, data: { content: string }) => {
+    const response = await api.put(`/ai/${id}`, data);
+    return response.data;
+  }
 };
 
 

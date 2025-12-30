@@ -82,14 +82,19 @@ const NoteView = () => {
     if (!note) return;
 
     try {
-      await notesService.update(note._id, { content: editableContent });
+      await notesService.update(note._id, {
+        content: editableContent,
+      });
+
       setNote({ ...note, content: editableContent });
       setIsEditing(false);
       toast.success("Notes updated successfully!");
-    } catch {
+    } catch (err) {
+      console.error(err);
       toast.error("Failed to save notes");
     }
   };
+
 
   if (!note) {
     return (

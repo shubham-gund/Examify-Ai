@@ -83,6 +83,7 @@ exports.generateNotesFromSyllabus = async (req, res, next) => {
     const aiResponse = await generateNotes(firstChunk);
 
     const note = await Note.create({
+      title: syllabus.title,
       syllabusId,
       content: aiResponse.content || JSON.stringify(aiResponse),
       summary: aiResponse.summary,
@@ -101,6 +102,71 @@ exports.generateNotesFromSyllabus = async (req, res, next) => {
     next(error);
   }
 };
+
+
+/**
+ * @desc    Update notes content
+ * @route   PUT /api/ai/:id
+ * @access  Private
+ */
+
+exports.updateNotesContent = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    const userId = req.user.id;
+
+    console.log(`📝 Updating note: ${id} for user: ${userId}`);
+
+    if (!id) {
+      return res.status(400).json({
+        status: "error",
+        message: "Note ID is required",
+      });
+    }
+
+    if (!content) {
+      return res.status(400).json({
+        status: "error",
+        message: "Content is required",
+      });
+    }
+
+    const note = await Note.findOne({
+      _id: id,
+      createdBy: userId,
+    });
+
+    if (!note) {
+      console.log(`❌ Note not found with ID: ${id} for user: ${userId}`);
+      return res.status(404).json({
+        status: "error",
+        message: "Note not found or you don't have permission to update it",
+      });
+    }
+
+    note.content = content;  
+    await note.save();
+    
+    console.log(`✅ Note updated successfully: ${id}`);
+
+    res.status(200).json({
+      status: "success",
+      message: "Note updated successfully",
+      data: { note },
+    });
+  } catch (error) {
+    console.error("Error updating note:", error);
+    next(error);
+  }
+};
+
+
+/**
+ * @desc    Get my generated notes
+ * @route   GET /api/ai/my-notes
+ * @access  Private
+ */
 
 exports.getMyNotes = async (req, res, next) => {
   try {
