@@ -11,7 +11,7 @@ export default function Hero() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ type: "spring", stiffness: 120, damping: 18 }}
-      className="px-4 py-16 md:py-24 border-b border-border"
+      className="px-4 py-16 md:py-24 border-b border-border bg-gradient-to-b from-background via-muted/40 to-background"
     >
       <div className="mx-auto grid max-w-6xl items-center gap-10 md:grid-cols-2">
         <div>

@@ -14,6 +14,27 @@ export const api = axios.create({
 });
 
 // ==============================
+// Notes Service
+// ==============================
+export const notesService = {
+  generateFromSyllabus: async (syllabusId: string) => {
+    const response = await api.post('/ai/generate-notes', { syllabusId });
+    return response.data;
+  },
+
+  getMyNotes: async () => {
+    const response = await api.get('/ai');
+    return response.data;
+  },
+
+  getById: async (id: string) => {
+    const response = await api.get(`/ai/${id}`);
+    return response.data;
+  },
+};
+
+
+// ==============================
 // Interceptors
 // ==============================
 

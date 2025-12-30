@@ -3,7 +3,9 @@ const {
   generateNotesFromSyllabus,
   generateQuestionsFromSyllabus,
   evaluateAnswerWithAI,
-  getNotesForSyllabus
+  getNotesForSyllabus,
+  getMyNotes,
+  getNoteById
 } = require('../controllers/aiController');
 const { protect, authorize } = require('../middlewares/auth');
 
@@ -12,8 +14,14 @@ const router = express.Router();
 // All routes require authentication
 router.use(protect);
 
-// Generate notes from syllabus (Both teachers and students)
-router.post('/generate-notes', generateNotesFromSyllabus);
+// Generate notes from syllabus
+router.post('/generate-notes', protect, generateNotesFromSyllabus);
+
+// Get all notes of logged-in user
+router.get('/', protect, getMyNotes);
+
+// Get single note
+router.get('/:id', protect, getNoteById);
 
 // Generate questions from syllabus (Teachers only)
 router.post(

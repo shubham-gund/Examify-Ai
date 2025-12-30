@@ -3,6 +3,7 @@
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
+import ThemeToggle from "@/components/ui/themeToggle";
 
 export default function Header() {
   return (
@@ -14,7 +15,11 @@ export default function Header() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <Link to="/" aria-label="Examify AI home" className="flex items-center gap-2">
-          <div className="h-6 w-6 rounded-md bg-primary" aria-hidden="true" />
+          <img 
+            src="/favicon.png" 
+            alt="Examify AI logo" 
+            className="h-8 w-8 rounded-full object-cover"
+          />
           <span className="font-semibold">Examify AI</span>
         </Link>
 
@@ -26,6 +31,11 @@ export default function Header() {
             <li><Link to="#testimonials" className="hover:text-primary">Testimonials</Link></li>
           </ul>
         </nav>
+
+
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+        </div>
 
         <div className="flex items-center gap-2">
           <Button asChild >

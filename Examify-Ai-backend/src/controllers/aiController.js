@@ -102,6 +102,48 @@ exports.generateNotesFromSyllabus = async (req, res, next) => {
   }
 };
 
+exports.getMyNotes = async (req, res, next) => {
+  try {
+    const notes = await Note.find({ createdBy: req.user.id })
+      .sort({ createdAt: -1 })
+      .populate('syllabusId', 'title');
+
+    res.status(200).json({
+      status: 'success',
+      results: notes.length,
+      data: {
+        notes
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getNoteById = async (req, res, next) => {
+  try {
+    const note = await Note.findOne({
+      _id: req.params.id,
+      createdBy: req.user.id
+    });
+
+    if (!note) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Note not found'
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      data: { note }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 /**
  * @desc    Generate questions from syllabus
  * @route   POST /api/ai/generate-questions
